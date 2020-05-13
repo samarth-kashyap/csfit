@@ -7,11 +7,9 @@ import numpy as np
 import argparse
 import time
 import sys
-import os
 
 sys.path.append('/home/g.samarth/') # location of heliosPy directory
 from heliosPy import datafuncs as cdata
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--norms",
@@ -78,7 +76,7 @@ if __name__=="__main__":
 
     rsun = 6.9598e10
     twopiemin6 = 2*pi*1e-6
-    
+
     daynum = 1          # length of time series
     tsLen = 138240  # array length of the time series
 
@@ -86,7 +84,7 @@ if __name__=="__main__":
     t = np.linspace(0, 72*24*3600*daynum, tsLen*daynum)
     dt = t[1] - t[0]
     freq = np.fft.fftfreq(t.shape[0], dt)*1e6
-    df = freq[1] - freq[0] # frequencies in microHz
+    df = freq[1] - freq[0]  # frequencies in microHz
 
     # reading mode parameters data
     data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
@@ -98,8 +96,8 @@ if __name__=="__main__":
     l2 = args.lp
     n2 = args.np
     compute_norms = args.norms
-    
-    if l2<l1:
+
+    if l2 < l1:
         ltemp = l2
         ntemp = n2
         l2 = l1
@@ -108,20 +106,20 @@ if __name__=="__main__":
         n1 = ntemp
 
     # reading the leakage matrix
-    print("Reading leakage matrix ", end=' '), 
+    print("Reading leakage matrix ", end=' '),
     sys.stdout.flush()
     t1 = time.time()
     rleaks = fits.open('/home/g.samarth/leakage/rleaks1.fits')[0].data
     horleaks = fits.open('/home/g.samarth/leakage/horleaks1.fits')[0].data
     t2 = time.time()
-    print(" -- DONE. Time taken = %6.2f seconds" %(t2-t1))
-    
+    print(f" -- DONE. Time taken = {t2-t1:6.2f} seconds")
+
     # considering only frequencies in a window
     # where cross spectrum is significant
     cenfreq, cenfwhm, cenamp = cdata.findfreq(data, l1, n1, 0)
     indm = cdata.locatefreq(freq, cenfreq - l1*0.6)
     indp = cdata.locatefreq(freq, cenfreq + l1*0.6)
-    freq = freq[indm:indp] 
+    freq = freq[indm:indp]
 
     cs = np.zeros((l1+1, freq.shape[0]), dtype=complex)
     csm = np.zeros((l1+1, freq.shape[0]), dtype=complex)
@@ -134,8 +132,8 @@ if __name__=="__main__":
 
     omeganl1, fwhmnl1, amp1 = cdata.findfreq(data, l1, n1, 0)
     omeganl2, fwhmnl2, amp2 = cdata.findfreq(data, l2, n2, 0)
-    
-    if compute_norms==True:
+
+    if compute_norms:
         norm = 1.0
     else:
         # old norms file
@@ -143,23 +141,22 @@ if __name__=="__main__":
         cnl2 = cdata.loadnorms(l2, n2, 1)
 
         # new norms
-#       cnl1 = np.loadtxt(writedir + "norm_"+str(l1).zfill(3)+"_"+str(n1).zfill(2))
-#       cnl2 = np.loadtxt(writedir + "norm_"+str(l2).zfill(3)+"_"+str(n2).zfill(2))
+        cnl1 = np.loadtxt(writedir + f"norm_{l1:03d}_{n1:02d}")
+        cnl2 = np.loadtxt(writedir + f"norm_{l2:03d}_{n2:02d}")
 
         norm1 = amp1*amp1 * omeganl1*omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
         norm2 = amp2*amp2 * omeganl2*omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
         norm = sqrt(norm1*norm2)
 
-    
     t1 = time.time()
-    for m in range( l1+1):
-        for dell1 in range(-dl, dl+1): 
+    for m in range(l1+1):
+        for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
             l21 = l1 + dell1
-            tempnorm = 1.0  #0.8 + 0.2*np.random.rand()
+            tempnorm = 1.0  # 0.8 + 0.2*np.random.rand()
             for dem in range(-dm, dm+1):
                 m2 = m+dem
-                if (abs(m2)<=l21):
+                if (abs(m2) <= l21):
                     omeganl1, fwhmnl1, amp1 = cdata.findfreq(data, l21, n2, m2)
                     mix = (274.8*1e2*(l21+0.5) /
                            ((twopiemin6)**2*rsun))/omeganl1**2
@@ -175,13 +172,12 @@ if __name__=="__main__":
     t2 = time.time()
     print("Time taken for computation (positive m) = %6.2f seconds" %(t2 - t1))
 
-
     t1 = time.time()
     for m in range(-l1, 1):
-        for dell1 in range(-dl, dl+1): 
+        for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
             l21 = l1 + dell1
-            tempnorm = 1.0  #0.7 + 0.3*np.random.rand()
+            tempnorm = 1.0  # 0.7 + 0.3*np.random.rand()
             for dem in range(-dm, dm+1):
                 m2 = m+dem
                 if (abs(m2)<=l21):
