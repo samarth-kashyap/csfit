@@ -10,7 +10,38 @@ sys.path.append("/home/g.samarth/")
 from heliosPy import datafuncs as cdata
 
 
-class coupmat:
+class coupMat:
+    """ Class for handling objects related to C_{ij} (parameter matrix)
+
+    Attributes:
+    -----------
+    lmin - int
+        minimum value of ell for which C_{ij} if fit
+    lmax - int
+        maximum value of ell for which C_{ij} is fit
+    dl_coup - int
+        maximum value of abs(i - j); i^th mode is coupled to j^th mode
+        if |i - j| <= dl_coup
+    msz_coup - int
+        size of coupling matrix C_{ij}; matrix is square
+    coup_mat - np.ndarray(ndim=2, dtype=float)
+        the coupling matrix C_{ij}
+    la_mat - np.ndarray(ndim=2, dtype=int)
+        (a : above) matrix containing ell values of upper index i of C^i_j
+    lb_mat - np.ndarray(ndim=2, dtype=int)
+        (b : below) matrix containing ell values of lower index j of C^i_j
+    ind_mat - np.ndarray(ndim=2, dtype=int)
+        matrix containing a combined index of (i, j)
+    mask - np.ndarray(ndim=2, dtype=bool)
+        mask to filter out values beyond dl_coup
+
+    Methods:
+    --------
+    generate_synth()
+        generates synthetic C^i_j for testing
+
+    """
+
     def __init__(self, lmin, lmax, dl_coup):
         self.lmin = lmin
         self.lmax = lmax
@@ -36,6 +67,23 @@ class coupmat:
         self.mask = bool_mat
 
     def generate_synth(self):
+        """Generates synthetic C^i_j
+
+        Block diagonal C^i_j which is diagonally dominant assuming
+        that the self coupling is the strongest.
+
+        Inputs:
+        -------
+        None
+
+        Outputs:
+        --------
+        None
+
+        *Updates the coup_mat attribute of the coupMat object.*
+
+        """
+
         self.coup_mat[self.mask] = 0.3*np.random.rand(self.mask.sum())
         for i in range(self.msz_coup):
             self.coup_mat[i, i] = 1 - 0.3*np.random.rand()
@@ -162,7 +210,7 @@ def create_synth(l1, n1, l2, n2, coupmat):
     print(f" Total time taken = {(t2 - t1):10.5f} seconds")
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     print(f"program start")
 
     # directories
