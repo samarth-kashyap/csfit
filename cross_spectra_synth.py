@@ -96,7 +96,7 @@ def find_split(data, l, n, m):
 # }}} find_split(data, l, n, m)
 
 
-# {{{ def derotate(phi, l, n, freq, pm):
+# {{{ def derotate(cs, l, n, freq, pm):
 def derotate(cs, l, n, freq, pm):
     """Derotate the given cross-spectra
 
@@ -122,13 +122,13 @@ def derotate(cs, l, n, freq, pm):
     """
     data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
     cs_derot = np.zeros(cs.shape, dtype=complex)
-#    df = (freq[1] - freq[0])*1e-6  # in Hz
+    df = (freq[1] - freq[0])*1e-6  # in Hz
 
     for m in range(l+1):
         delta_nu = find_split(data, l, n, m)  # in nHz
         delta_nu *= 1e-9
-        const = -1*pm*delta_nu*1e-9*72*24*3600
-#        const = -1 * pm * delta_nu / df
+#        const = -1*pm*delta_nu*72*24*3600
+        const = -1 * pm * delta_nu / df
         _real = sciim.shift(cs[m, :].real, const, mode='wrap', order=1)
         _imag = sciim.shift(cs[m, :].imag, const, mode='wrap', order=1)
         cs_derot[m, :] = _real + 1j*_imag
@@ -290,7 +290,6 @@ if __name__ == "__main__":
         norm = sqrt(norm1*norm2)
 
     t1 = time.time()
-    _tc = 0
     for m1 in range(l1+1):
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
@@ -299,19 +298,16 @@ if __name__ == "__main__":
             for dem in range(-dm, dm+1):
                 m1p = m1 + dem
                 if (abs(m1p) <= l1p):
-                    _tc += 1
-                    omeganl1p, fwhmnl1p, amp1p = \
-                        cdata.findfreq(data, l1p, n1, m1p)
+                    omeganl1p, fwhmnl1p, amp1p = cdata.findfreq(data,
+                                                                l1p, n1, m1p)
                     mix = (274.8*1e2*(l1p+0.5) /
                            ((twopiemin6)**2*rsun))/omeganl1p**2
                     leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
                         mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
                     leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
                         mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
-                    phi1 = cdata.lorentzian(omeganl1, fwhmnl1, freq)
-                    phi1sum += leak1*leak2 * phi1*phi1.conjugate() * cij
-            print(f" m1 = {m1}; total count = {_tc}")
-            _tc = 0
+                    phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
+                    phi1sum += leak1*leak2 * phi1p*phi1p.conjugate() * cij
         cs[m1, :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
@@ -327,28 +323,33 @@ if __name__ == "__main__":
             for dem in range(-dm, dm+1):
                 m1p = m1 + dem  # m2p = m1p
                 if (abs(m1p) <= l1p):
-                    omeganl1p, fwhmnl1p, amp1p = \
-                        cdata.findfreq(data, l1p, n1, m1p)
+                    omeganl1p, fwhmnl1p, amp1p = cdata.findfreq(data,
+                                                                l1p, n1, m1p)
                     mix = (274.8*1e2*(l1p+0.5) /
                            ((twopiemin6)**2*rsun))/omeganl1p**2
                     leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
                         mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
                     leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
                         mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
-                    phi1 = cdata.lorentzian(omeganl1, fwhmnl1, freq)
-                    phi1sum += leak1*leak2 * phi1*phi1.conjugate() * cij
+                    phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
+                    phi1sum += leak1*leak2 * phi1p*phi1p.conjugate() * cij
         csm[abs(m1), :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
     print(f"Time taken for computation (negative m) = " +
           f"{(t2 - t1):6.2f} seconds")
 
+    # plotting before derotation
+#    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
+#    plt.show()
+
     # derotating the cross spectra
     cs = derotate(cs, l1, n1, freq, 1)
     csm = derotate(csm, l1, n1, freq, -1)
 
-    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
-    plt.show()
+    # plotting after derotation
+#    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
+#    plt.show()
 
     # writing cross spectra to files
     normname = "norm" if compute_norms else ""
