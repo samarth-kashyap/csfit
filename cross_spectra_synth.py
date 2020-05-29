@@ -1,4 +1,7 @@
+# {{{ Library imports
 from numpy.polynomial.legendre import legval
+#  Note that directory containing heliosPy needs to be added to PYTHONPATH
+from heliosPy import datafuncs as cdata
 import matplotlib.pyplot as plt
 import scipy.ndimage as sciim
 from astropy.io import fits
@@ -7,10 +10,31 @@ import numpy as np
 import argparse
 import time
 import sys
+# }}} imports
 
-sys.path.append('/home/g.samarth/') # location of heliosPy directory
-from heliosPy import datafuncs as cdata
 
+# {{{ Global variables
+# directories
+writedir = '/scratch/g.samarth/csfit/'
+
+# calculation parameters
+dl = 6              # delta_ell for leakage matrix
+dm = 15             # delta_m for leakage matrix
+dl_mat = 6      # max delta_ell for leakage matrix
+dm_mat = 15     # max delta_m for leakage matrix
+
+rsun = 6.9598e10
+twopiemin6 = 2*pi*1e-6
+
+daynum = 1          # length of time series
+tsLen = 138240  # array length of the time series
+
+# reading mode parameters data
+data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
+# }}} global vars
+
+
+# {{{ Argument parser
 parser = argparse.ArgumentParser()
 parser.add_argument("--norms",
                     help="computes norms",
@@ -29,68 +53,183 @@ parser.add_argument("--plot",
                     help="plot result after computation",
                     action="store_true")
 args = parser.parse_args()
+# }}} args
 
 
-def finda1(data, l, n, m):
-    """
-    Find a coefficients for given l, n, m
+# {{{ def find_split(data, l, n, m):
+def find_split(data, l, n, m):
+    """ Find total frequency splitting (in nHz) using asymptotic polynomials
+
+    Inputs:
+    -------
+    data - np.ndarray(ndim=2, dtype=float)
+        contains the data from mode parameter file (e.g. hmi.6328.36)
+    l - int
+        spherical harmonic degree
+    n - int
+        radial order
+    m - int
+        azimuthal order
+
+    Returns:
+    --------
+    totsplit - float
+        frequency splitting in nHz
+
+    Notes:
+    ------
+    Legendre polynomials are used to compute the splitting frequency.
+    This is an asymptotic approximation to the general orthogonal
+    polynomials as described in Schou?
+
     """
     L = sqrt(l*(l+1))
     try:
-        modeindex = np.where((data[:, 0] == l) * (data[:, 1] == n))[0][0]
+        modeindex = np.where((data[:, 0] == l) *
+                             (data[:, 1] == n))[0][0]
     except IndexError:
         print(f"MODE NOT FOUND : l = {l}, n = {n}")
         return None, None, None
     splits = np.append([0.0], data[modeindex, 12:48])
     totsplit = legval(1.0*m/L, splits)*L
     return totsplit
+# }}} find_split(data, l, n, m)
 
 
-def derotate(phi, l, n, freq, pm):
+# {{{ def derotate(phi, l, n, freq, pm):
+def derotate(cs, l, n, freq, pm):
     """Derotate the given cross-spectra
+
     Inputs:
     -------
+    cs - np.ndarray(ndim=2, dtype=complex)
+        cross-spectra that needs to be derotated
+    l - int
+        spherical harmonic degree
+    n - int
+        radial order
+    freq - np.ndarray(ndim=1, dtype=float)
+        array containing the frequencies
+    pm - int
+        pm = 1  implies m >= 0
+        pm = -1 implies m <= 0
+
     Outputs:
     --------
+    cs_derot - np.ndarray(ndim=2, dtype=complex)
+        derotated version of cs
+
     """
     data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
-    phinew = np.zeros(phi.shape, dtype=complex)
+    cs_derot = np.zeros(cs.shape, dtype=complex)
+#    df = (freq[1] - freq[0])*1e-6  # in Hz
+
     for m in range(l+1):
-        a1 = finda1(data, l, n, m)
-        const = -1*pm*a1*1e-9*72*24*3600
-        _real = sciim.shift(phi[m, :].real, const, mode='wrap', order=1)
-        _imag = sciim.shift(phi[m, :].imag, const, mode='wrap', order=1)
-        phinew[m, :] = _real + 1j*_imag
-    return phinew
+        delta_nu = find_split(data, l, n, m)  # in nHz
+        delta_nu *= 1e-9
+        const = -1*pm*delta_nu*1e-9*72*24*3600
+#        const = -1 * pm * delta_nu / df
+        _real = sciim.shift(cs[m, :].real, const, mode='wrap', order=1)
+        _imag = sciim.shift(cs[m, :].imag, const, mode='wrap', order=1)
+        cs_derot[m, :] = _real + 1j*_imag
+    return cs_derot
+# }}} derotate(phi, l, n, freq, pm)
 
 
-if __name__=="__main__":
-    # directories
-    writedir = '/scratch/g.samarth/csfit/'
+# {{{ def plot_cs(cs, csm, freq, cenfreq, l1, real_or_imag):
+def plot_cs(cs, csm, freq, cenfreq, l1, real_or_imag):
+    """ Plot of cross-spectra (real or imag part only)
 
-    # calculation parameters
-    dl = 6              # delta_ell for leakage matrix
-    dm = 15             # delta_m for leakage matrix
-    dl_mat = 6      # max delta_ell for leakage matrix
-    dm_mat = 15     # max delta_m for leakage matrix
+    Inputs:
+    -------
+    cs - np.ndarray(ndim=2, dtype=complex)
+        cross-spectra for m >= 0
+    csm - np.ndarray(ndim=2, dtype=complex)
+        cross-spectra for m <= 0
+    freq - np.ndarray(ndim=1, dtype=float)
+        array containing frequency
+    cenfreq - float
+        central frequency value in microHz
+    l1 - int
+        spherical harmonic degree
+    real_or_imag - int
+        1 = real; 2 = imag
 
-    rsun = 6.9598e10
-    twopiemin6 = 2*pi*1e-6
+    Outputs:
+    --------
+    fig - matplotlib figure
+        Figure containing plot of cross-spectra
 
-    daynum = 1          # length of time series
-    tsLen = 138240  # array length of the time series
+    """
+    plot_data = cs.real if real_or_imag == 1 else cs.imag
+    plot_datam = csm.real if real_or_imag == 1 else csm.imag
+    fig = plt.figure(figsize=(10, 10))
+    plt.subplot(121)
+    ar = (freq[-1]-freq[0])/l1
+    im = plt.imshow(plot_data, vmax=plot_data.max(), aspect=ar,
+                    extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0])
+    plt.colorbar(im)
 
+    plt.subplot(122)
+    im = plt.imshow(plot_datam, vmax=plot_datam.max(), aspect=ar,
+                    extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0])
+    plt.colorbar(im)
+    plt.tight_layout()
+    return fig
+# }}} plot_cs(cs)
+
+
+# {{{ def plot_cs_sum(cs, csm, freq, cenfreq, l1):
+def plot_cs_sum(cs, csm, freq, cenfreq, l1):
+    """ Generates plots of cross-spectra summed over m
+
+    Inputs:
+    -------
+    cs - np.ndarray(ndim=2, dtype=complex)
+        cross-spectra for m >= 0
+    csm - np.ndarray(ndim=2, dtype=complex)
+        cross-spectra for m <= 0
+    freq - np.ndarray(ndim=1, dtype=float)
+        array containing frequency
+    cenfreq - float
+        central frequency value in microHz
+    l1 - int
+        spherical harmonic degree
+
+    Outputs:
+    --------
+    fig - matplotlib figure
+        Figure containing plot of cross-spectra
+
+    """
+    fig = plt.figure()
+    plt.subplot(121)
+    plt.title("Summation over m >= 0")
+    plt.plot(freq-cenfreq, np.sum(cs.real, axis=0)/l1,
+             linewidth=0.35, color="blue", label="real")
+    plt.plot(freq-cenfreq, np.sum(cs.imag, axis=0)/l1,
+             linewidth=0.35, color="red", label="real")
+    plt.legend()
+
+    plt.subplot(122)
+    plt.title("Summation over m <= 0")
+    plt.plot(freq-cenfreq, np.sum(csm.real, axis=0)/l1,
+             linewidth=0.35, color="blue", label="real")
+    plt.plot(freq-cenfreq, np.sum(csm.imag, axis=0)/l1,
+             linewidth=0.35, color="red", label="real")
+    plt.legend()
+    return fig
+# }}} plot_cs_sum(cs, csm, freq, cenfreq, l1)
+
+
+if __name__ == "__main__":
     # time domain and frequency domain
     t = np.linspace(0, 72*24*3600*daynum, tsLen*daynum)
     dt = t[1] - t[0]
     freq = np.fft.fftfreq(t.shape[0], dt)*1e6
     df = freq[1] - freq[0]  # frequencies in microHz
 
-    # reading mode parameters data
-    data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
-
     # reading input values
-
     l1 = args.l
     n1 = args.n
     l2 = args.lp
@@ -144,62 +283,73 @@ if __name__=="__main__":
         cnl1 = np.loadtxt(writedir + f"norm_{l1:03d}_{n1:02d}")
         cnl2 = np.loadtxt(writedir + f"norm_{l2:03d}_{n2:02d}")
 
-        norm1 = amp1*amp1 * omeganl1*omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
-        norm2 = amp2*amp2 * omeganl2*omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
+        norm1 = (amp1*amp1) * (omeganl1*omeganl1) * \
+            (cnl1 * fwhmnl1 * twopiemin6**3)
+        norm2 = (amp2*amp2) * (omeganl2*omeganl2) * \
+            (cnl2 * fwhmnl2 * twopiemin6**3)
         norm = sqrt(norm1*norm2)
 
     t1 = time.time()
-    for m in range(l1+1):
+    _tc = 0
+    for m1 in range(l1+1):
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
-            l21 = l1 + dell1
-            tempnorm = 1.0  # 0.8 + 0.2*np.random.rand()
+            l1p = l1 + dell1  # l2p = l1p
+            cij = 1.0  # 0.8 + 0.2*np.random.rand()
             for dem in range(-dm, dm+1):
-                m2 = m+dem
-                if (abs(m2) <= l21):
-                    omeganl1, fwhmnl1, amp1 = cdata.findfreq(data, l21, n2, m2)
-                    mix = (274.8*1e2*(l21+0.5) /
-                           ((twopiemin6)**2*rsun))/omeganl1**2
-                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m+249] +\
-                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m+249]
-                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m+249] +\
-                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m+249]
+                m1p = m1 + dem
+                if (abs(m1p) <= l1p):
+                    _tc += 1
+                    omeganl1p, fwhmnl1p, amp1p = \
+                        cdata.findfreq(data, l1p, n1, m1p)
+                    mix = (274.8*1e2*(l1p+0.5) /
+                           ((twopiemin6)**2*rsun))/omeganl1p**2
+                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
+                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
+                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
+                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
                     phi1 = cdata.lorentzian(omeganl1, fwhmnl1, freq)
-                    phi1sum = phi1sum +\
-                        leak1*leak2 * phi1*phi1.conjugate() * tempnorm
-        cs[m, :] = phi1sum*norm
+                    phi1sum += leak1*leak2 * phi1*phi1.conjugate() * cij
+            print(f" m1 = {m1}; total count = {_tc}")
+            _tc = 0
+        cs[m1, :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
-    print("Time taken for computation (positive m) = %6.2f seconds" %(t2 - t1))
+    print(f"Time taken for computation (positive m) = " +
+          f"{(t2 - t1):6.2f} seconds")
 
     t1 = time.time()
-    for m in range(-l1, 1):
+    for m1 in range(-l1, 1):
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
-            l21 = l1 + dell1
-            tempnorm = 1.0  # 0.7 + 0.3*np.random.rand()
+            l1p = l1 + dell1  # l2p = l1p
+            cij = 1.0  # 0.7 + 0.3*np.random.rand()
             for dem in range(-dm, dm+1):
-                m2 = m+dem
-                if (abs(m2)<=l21):
-                    omeganl1, fwhmnl1, amp1 = cdata.findfreq(data, l21, n2, m2)
-                    mix = (274.8*1e2*(l21+0.5) /
-                           ((twopiemin6)**2*rsun))/omeganl1**2
-                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m+249] +\
-                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m+249]
-                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m+249] +\
-                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m+249]
+                m1p = m1 + dem  # m2p = m1p
+                if (abs(m1p) <= l1p):
+                    omeganl1p, fwhmnl1p, amp1p = \
+                        cdata.findfreq(data, l1p, n1, m1p)
+                    mix = (274.8*1e2*(l1p+0.5) /
+                           ((twopiemin6)**2*rsun))/omeganl1p**2
+                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
+                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
+                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
+                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
                     phi1 = cdata.lorentzian(omeganl1, fwhmnl1, freq)
-                    phi1sum = phi1sum +\
-                        leak1*leak2 * phi1*phi1.conjugate() * tempnorm
-        csm[abs(m), :] = phi1sum*norm
+                    phi1sum += leak1*leak2 * phi1*phi1.conjugate() * cij
+        csm[abs(m1), :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
-    print("Time taken for computation (negative m) = %6.2f seconds" %(t2 - t1))
-    
+    print(f"Time taken for computation (negative m) = " +
+          f"{(t2 - t1):6.2f} seconds")
+
     # derotating the cross spectra
-    cs = derotate(cs, l1, n1, freq, 1) 
-    csm = derotate(csm, l1, n1, freq, -1) 
-    
+    cs = derotate(cs, l1, n1, freq, 1)
+    csm = derotate(csm, l1, n1, freq, -1)
+
+    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
+    plt.show()
+
     # writing cross spectra to files
     normname = "norm" if compute_norms else ""
     fp_name = writedir + f"csp_synth_{n1:02d}_{l1:03d}_{l2:03d}" +\
@@ -212,20 +362,10 @@ if __name__=="__main__":
     np.save(fm_name, csm)
     np.save(ff_name, freq)
 
-
     t2 = time.time()
-    print("Time taken = %7.3f seconds" %(t2-t1))
-    '''
-    # plotting the cross-spectra
-    ar = (freq[-1]-freq[0])/l1
-    plt.imshow(cs.real, vmax = (cs.real).max(), aspect=ar, extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0]); 
-    plt.colorbar(); plt.show(); plt.close();
-    
-    plt.imshow(csm.real, vmax = (csm.real).max(), aspect=ar, extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0]); 
-    plt.colorbar(); plt.show(); plt.close();
-    '''
+    print(f"Time taken = {(t2-t1):7.3f} seconds")
 
     # plotting average over positive and negative m
     if args.plot:
-        plt.plot(freq-cenfreq, np.sum(cs.real, axis=0)/l1, linewidth=0.35); plt.show()
-        plt.plot(freq-cenfreq, np.sum(csm.real, axis=0)/l1, linewidth=0.35); plt.show()
+        fig = plot_cs_sum(cs, csm, freq, cenfreq, l1)
+        plt.show()
