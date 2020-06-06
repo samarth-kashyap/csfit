@@ -283,10 +283,8 @@ if __name__ == "__main__":
         cnl1 = np.loadtxt(writedir + f"norm_{l1:03d}_{n1:02d}")
         cnl2 = np.loadtxt(writedir + f"norm_{l2:03d}_{n2:02d}")
 
-        norm1 = (amp1*amp1) * (omeganl1*omeganl1) * \
-            (cnl1 * fwhmnl1 * twopiemin6**3)
-        norm2 = (amp2*amp2) * (omeganl2*omeganl2) * \
-            (cnl2 * fwhmnl2 * twopiemin6**3)
+        norm1 = amp1**2 * omeganl1 * omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
+        norm2 = amp2**2 * omeganl2 * omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
         norm = sqrt(norm1*norm2)
 
     t1 = time.time()

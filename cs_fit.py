@@ -1,15 +1,21 @@
-import numpy as np
-from math import sqrt
-from numpy.polynomial.legendre import legval
-from astropy.io import fits
-from math import pi
-import matplotlib.pyplot as plt
+# {{{ Library imports
 import time
-import sys
-sys.path.append("/home/g.samarth/")
+import numpy as np
+from math import pi
+from math import sqrt
+from astropy.io import fits
+import matplotlib.pyplot as plt
 from heliosPy import datafuncs as cdata
+from numpy.polynomial.legendre import legval
+# }}} Library imports
 
 
+# {{{ Global variables
+mode_data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
+# }}} global vars
+
+
+# {{{ class coupMat
 class coupMat:
     """ Class for handling objects related to C_{ij} (parameter matrix)
 
@@ -65,6 +71,7 @@ class coupMat:
         self.lb_mat = ell2_mat
         self.ind_mat = ind_mat
         self.mask = bool_mat
+        return None
 
     def generate_synth(self):
         """Generates synthetic C^i_j
@@ -91,21 +98,51 @@ class coupMat:
             self.coup_mat[i, :] /= _norm
         return None
 
+    def cij_val(self, la, lb):
+        """Returns the value of coupling matrix for given la and lb
 
+        Inputs:
+        -------
+        la - int
+            spherical harmonic degree (upper)
+        lb - int
+            spherical harmonic degree (lower)
+
+        Returns:
+        --------
+        cij(la, lb) - complex
+            the coupling matrix element
+        """
+        mask_la = self.la_mat == la
+        mask_lb = self.lb_mat == lb
+        mask_ij = mask_la * mask_lb
+        cij = self.coup_mat[mask_ij]
+        try:
+            return cij[0]
+        except IndexError:
+            return 0.0
+# }}} coupMat
+
+
+# {{{ def resid2(x, f1N, p1, noise_level)
 def resid2(x, f1N, p1, noise_level):
     f1N_fit, _temp = trans2(x, p1, noise_level)
     diff = f1N_fit - f1N
     resid = (abs(diff)**2).sum()
     return f1N_fit, diff, resid
+# }}} resid2(x, f1N, p1, noise_level)
 
 
+# {{{ def gauss_newton(J, res, p1, damping)
 def gauss_newton(J, res, p1, damping):
     jtj = J.transpose().dot(J)
     jtji = np.linalg.pinv(jtj, rcond=1e-15)
     p_add = jtji.dot(J.transpose().dot(res))
     return p1 + damping*p_add
+# }}} gauss_newton(J, res, p1, damping)
 
 
+# {{{ iter_gn2(p1, x, f1N, Niter, damping, noise_level)
 def iter_gn2(p1, x, f1N, Niter, damping, noise_level):
     for i in range(Niter):
         J = jacob2(len(p1), len(x), x, p1)
@@ -117,9 +154,11 @@ def iter_gn2(p1, x, f1N, Niter, damping, noise_level):
         p1 = gauss_newton(J, res_vec, p1, dp)
 
         sval = S if i == 0 else np.append(sval, S)
-    return pval0, pval1, sval
+    return pval0, pval1, svaldef 
+# }}} iter_gn2(p1, x, f1N, Niter, damping, noise_level)
 
 
+# {{{ def finda1(data, l, n, m)
 def finda1(data, l, n, m):
     """
     Find a coefficients for given l, n, m
@@ -133,8 +172,10 @@ def finda1(data, l, n, m):
     splits = np.append([0.0], data[modeindex, 12:48])
     totsplit = legval(1.0*m/L, splits)*L
     return totsplit
+# }}} finda1(data, l, n, m)
 
 
+# {{{ def create_synth(l1, n1, l2, n2, coupmat)
 def create_synth(l1, n1, l2, n2, coupmat):
     """Create synthetic dataset for testing out fitting algorithm
     Inputs:
@@ -170,44 +211,56 @@ def create_synth(l1, n1, l2, n2, coupmat):
     horleaks2 = horleaks[:, :, l2, :].copy()
     del rleaks, horleaks
 
+    # considering only frequencies in a window
+    # where cross spectrum is significant
+    cenfreq, cenfwhm, cenamp = cdata.findfreq(mode_data, l1, n1, 0)
+    indm = cdata.locatefreq(freq, cenfreq - l1*0.6)
+    indp = cdata.locatefreq(freq, cenfreq + l1*0.6)
+    freq = freq[indm:indp].copy()
+
+    cs = np.zeros((l1+1, freq.shape[0]), dtype=complex)
+    phi1sum = np.zeros(freq.shape[0], dtype=complex)
+
     # new norms
     cnl1 = np.loadtxt(writedir + f"norm_{l1:03d}_{n1:02d}")
     cnl2 = np.loadtxt(writedir + f"norm_{l2:03d}_{n2:02d}")
-    mode_data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
-
     omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data, l1, n1, 0)
     omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data, l2, n2, 0)
 
-    norm1 = amp1*amp1 * omeganl1*omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
-    norm2 = amp2*amp2 * omeganl2*omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
+    norm1 = amp1**2 * omeganl1 * omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
+    norm2 = amp2**2 * omeganl2 * omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
     norm = sqrt(norm1*norm2)
 
     t1 = time.time()
-    for m in range(l1+1):
+    for m1 in range(l1+1):
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
-            l21 = l1 + dell1
-            tempnorm = 1.0  # 0.8 + 0.2*np.random.rand()
+            l1p = l1 + dell1
+            l2p = l1p
+#            cij = 1.0  # 0.8 + 0.2*np.random.rand()
+            cij1 = coupmat.cij_val(l1, l1p)
+            cij2 = coupmat.cij_val(l2, l2p)
             for dem in range(-dm, dm+1):
-                m2 = m+dem
-                if (abs(m2) <= l21):
-                    omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data,
-                                                             l21, n2, m2)
-                    mix = (274.8*1e2*(l21+0.5) /
-                           ((twopiemin6)**2*rsun))/omeganl1**2
-                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m+249] +\
-                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m+249]
-                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m+249] +\
-                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m+249]
-                    phi1 = cdata.lorentzian(omeganl1 - finda1(mode_data,
-                                                              l1, n1, m),
-                                            fwhmnl1, freq)
-                    phi1sum = phi1sum +\
-                        leak1*leak2 * phi1*phi1.conjugate() * tempnorm
-        cs[m, :] = phi1sum*norm
+                m1p = m1 + dem
+                if (abs(m1p) <= l1p):
+                    omeganl1p, fwhmnl1p, amp1p = cdata.findfreq(mode_data,
+                                                                l1p, n1, m1p)
+                    mix = (274.8*1e2*(l1p+0.5) /
+                           ((twopiemin6)**2*rsun))/omeganl1p**2
+                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
+                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
+                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
+                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
+                    phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
+                    phi1sum += (leak1*leak2 * phi1p*phi1p.conjugate() *
+                                cij1*cij2)
+        cs[m1, :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
-    print(f" Total time taken = {(t2 - t1):10.5f} seconds")
+    print(f"Time taken for computation (positive m) = " +
+          f"{(t2 - t1):6.2f} seconds")
+    return cs
+    # }}} create_synth(l1, n1, l2, n2, coupmat)
 
 
 if __name__ == "__main__":
@@ -215,3 +268,14 @@ if __name__ == "__main__":
 
     # directories
     writedir = '/scratch/g.samarth/csfit/'
+
+    coupmat = coupMat(194, 206, 6)
+    coupmat.generate_synth()
+    l1, n1, l2, n2 = 200, 0, 202, 0
+    cs = create_synth(l1, n1, l2, n2, coupmat)
+
+    plt.figure()
+    im = plt.imshow(abs(cs), aspect=cs.shape[1]/cs.shape[0],
+                    vmax=abs(cs).max()/5, cmap="Greys")
+    plt.colorbar(im)
+    plt.show()
