@@ -56,6 +56,33 @@ args = parser.parse_args()
 # }}} args
 
 
+# {{{ class multiline_plot():
+class multiline_plot():
+    def __init__(self):
+        self.fig, self.ax = plt.subplots(1)
+        self.lkterm = np.array([])
+
+    def add_plot(self, plot_data, inc):
+        _max = abs(plot_data).max()
+        if _max > 0:
+            plot_data /= _max
+            plot_data += inc
+        if abs(plot_data).sum() < 0.1:
+            plot_data += inc
+            self.ax.plot(plot_data, color='red')
+        else:
+            self.ax.plot(plot_data, color='black')
+
+    def leak_terms(self, l1p, m1p, leak1, leak2, inc):
+        if inc == 0:
+            self.lkterm = np.append(self.lkterm, (l1p, m1p,
+                                                  leak1, leak2))
+        else:
+            self.lkterm = np.vstack([self.lkterm, (l1p, m1p,
+                                                   leak1, leak2)])
+# }}} multiline_plot()
+
+
 # {{{ def find_split(data, l, n, m):
 def find_split(data, l, n, m):
     """ Find total frequency splitting (in nHz) using asymptotic polynomials
@@ -305,7 +332,10 @@ if __name__ == "__main__":
                     leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
                         mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
                     phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
-                    phi1sum += leak1*leak2 * phi1p*phi1p.conjugate() * cij
+                    phi1sum += leak1*leak2 * (phi1p*phi1p.conjugate()) * cij
+                    if abs(phi1sum.imag).sum() > 0:
+                        print(f" m1 = {m1}, dem = {dem}, dell1 = {dell1}")
+                        exit()
         cs[m1, :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
@@ -330,7 +360,7 @@ if __name__ == "__main__":
                     leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
                         mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
                     phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
-                    phi1sum += leak1*leak2 * phi1p*phi1p.conjugate() * cij
+                    phi1sum += leak1*leak2 * (phi1p*phi1p.conjugate()) * cij
         csm[abs(m1), :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
@@ -342,8 +372,8 @@ if __name__ == "__main__":
 #    plt.show()
 
     # derotating the cross spectra
-    cs = derotate(cs, l1, n1, freq, 1)
-    csm = derotate(csm, l1, n1, freq, -1)
+#    cs = derotate(cs, l1, n1, freq, 1)
+#    csm = derotate(csm, l1, n1, freq, -1)
 
     # plotting after derotation
 #    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
