@@ -2,10 +2,11 @@
 from numpy.polynomial.legendre import legval
 #  Note that directory containing heliosPy needs to be added to PYTHONPATH
 from heliosPy import datafuncs as cdata
+from globalvars import globalvars
 import matplotlib.pyplot as plt
 import scipy.ndimage as sciim
 from astropy.io import fits
-from math import sqrt, pi
+from math import sqrt
 import numpy as np
 import argparse
 import time
@@ -15,22 +16,23 @@ import sys
 
 # {{{ Global variables
 # directories
-writedir = '/scratch/g.samarth/csfit/'
+gvar = globalvars()
+writedir = gvar.write_dir
 
 # calculation parameters
-dl = 6              # delta_ell for leakage matrix
-dm = 15             # delta_m for leakage matrix
-dl_mat = 6      # max delta_ell for leakage matrix
-dm_mat = 15     # max delta_m for leakage matrix
+dl = gvar.dl          # delta_ell for leakage matrix
+dm = gvar.dm          # delta_m for leakage matrix
+dl_mat = gvar.dl_mat  # max delta_ell for leakage matrix
+dm_mat = gvar.dm_mat  # max delta_m for leakage matrix
 
-rsun = 6.9598e10
-twopiemin6 = 2*pi*1e-6
+rsun = gvar.rsun
+twopiemin6 = gvar.twopiemin6
 
-daynum = 1          # length of time series
-tsLen = 138240  # array length of the time series
+daynum = gvar.daynum  # length of time series
+tsLen = gvar.tsLen    # array length of the time series
 
 # reading mode parameters data
-data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
+data = np.loadtxt(gvar.leak_dir + 'hmi.6328.36')
 # }}} global vars
 
 
@@ -147,14 +149,13 @@ def derotate(cs, l, n, freq, pm):
         derotated version of cs
 
     """
-    data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
+    data = np.loadtxt(gvar.leak_dir + 'hmi.6328.36')
     cs_derot = np.zeros(cs.shape, dtype=complex)
     df = (freq[1] - freq[0])*1e-6  # in Hz
 
     for m in range(l+1):
         delta_nu = find_split(data, l, n, m)  # in nHz
         delta_nu *= 1e-9
-#        const = -1*pm*delta_nu*72*24*3600
         const = -1 * pm * delta_nu / df
         _real = sciim.shift(cs[m, :].real, const, mode='wrap', order=1)
         _imag = sciim.shift(cs[m, :].imag, const, mode='wrap', order=1)
@@ -191,16 +192,26 @@ def plot_cs(cs, csm, freq, cenfreq, l1, real_or_imag):
     plot_data = cs.real if real_or_imag == 1 else cs.imag
     plot_datam = csm.real if real_or_imag == 1 else csm.imag
     fig = plt.figure(figsize=(10, 10))
+    plt.rc('text', usetex=True)
+    plt.rc('font', family='serif', size='14')
     plt.subplot(121)
     ar = (freq[-1]-freq[0])/l1
-    im = plt.imshow(plot_data, vmax=plot_data.max(), aspect=ar,
-                    extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0])
-    plt.colorbar(im)
+    plt.imshow(plot_data, vmax=plot_data.max(), aspect=ar,
+               extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0],
+               cmap='gray')
+    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
+    plt.ylabel("azimuthal order $m$")
+#    plt.colorbar(im)
 
     plt.subplot(122)
-    im = plt.imshow(plot_datam, vmax=plot_datam.max(), aspect=ar,
-                    extent=[freq[0]-cenfreq, freq[-1]-cenfreq, l1, 0])
-    plt.colorbar(im)
+    plt.rc('text', usetex=True)
+    plt.rc('font', family='serif', size='14')
+    plt.imshow(plot_datam, vmax=plot_datam.max(), aspect=ar,
+               extent=[freq[0]-cenfreq, freq[-1]-cenfreq, -l1, 0],
+               cmap='gray')
+#    plt.colorbar(im)
+    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
+    plt.ylabel("azimuthal order $m$")
     plt.tight_layout()
     return fig
 # }}} plot_cs(cs)
@@ -275,8 +286,8 @@ if __name__ == "__main__":
     print("Reading leakage matrix ", end=' '),
     sys.stdout.flush()
     t1 = time.time()
-    rleaks = fits.open('/home/g.samarth/leakage/rleaks1.fits')[0].data
-    horleaks = fits.open('/home/g.samarth/leakage/horleaks1.fits')[0].data
+    rleaks = fits.open(gvar.leak_dir + 'rleaks1.fits')[0].data
+    horleaks = fits.open(gvar.leak_dir + 'horleaks1.fits')[0].data
     t2 = time.time()
     print(f" -- DONE. Time taken = {t2-t1:6.2f} seconds")
 
@@ -285,6 +296,7 @@ if __name__ == "__main__":
     cenfreq, cenfwhm, cenamp = cdata.findfreq(data, l1, n1, 0)
     indm = cdata.locatefreq(freq, cenfreq - l1*0.6)
     indp = cdata.locatefreq(freq, cenfreq + l1*0.6)
+    print(f" indm, indp = ({indm}, {indp})")
     freq = freq[indm:indp]
 
     cs = np.zeros((l1+1, freq.shape[0]), dtype=complex)
@@ -315,27 +327,25 @@ if __name__ == "__main__":
         norm = sqrt(norm1*norm2)
 
     t1 = time.time()
+    print(f" dl = {dl}; dm = {dm}")
     for m1 in range(l1+1):
+        m1p = np.arange(m1+dm, m1-dm-1, -1)
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
-            l1p = l1 + dell1  # l2p = l1p
+            l1p = l1 - dell1  # l2p = l1p
             cij = 1.0  # 0.8 + 0.2*np.random.rand()
-            for dem in range(-dm, dm+1):
-                m1p = m1 + dem
-                if (abs(m1p) <= l1p):
-                    omeganl1p, fwhmnl1p, amp1p = cdata.findfreq(data,
-                                                                l1p, n1, m1p)
-                    mix = (274.8*1e2*(l1p+0.5) /
-                           ((twopiemin6)**2*rsun))/omeganl1p**2
-                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
-                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
-                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
-                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
-                    phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
-                    phi1sum += leak1*leak2 * (phi1p*phi1p.conjugate()) * cij
-                    if abs(phi1sum.imag).sum() > 0:
-                        print(f" m1 = {m1}, dem = {dem}, dell1 = {dell1}")
-                        exit()
+            omeganl1p, fwhmnl1p, amp1p = cdata.findfreq_vecm(data,
+                                                             l1p, n1,
+                                                             m1p)
+            mix = (274.8*1e2*(l1p+0.5) /
+                   ((twopiemin6)**2*rsun))/omeganl1p**2
+            leak1 = rleaks1[:, dell1+dl_mat, m1+249] +\
+                mix*horleaks1[:, dell1+dl_mat, m1+249]
+            leak2 = rleaks2[:, dell2+dl_mat, m1+249] +\
+                mix*horleaks2[:, dell2+dl_mat, m1+249]
+            phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
+            amp1p = amp1p[:, np.newaxis]
+            phi1sum += (leak1*leak2 @ (amp1p*amp1p*phi1p*phi1p.conjugate()) * cij)
         cs[m1, :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
@@ -344,23 +354,23 @@ if __name__ == "__main__":
 
     t1 = time.time()
     for m1 in range(-l1, 1):
+        m1p = np.arange(m1+dm, m1-dm-1, -1)
         for dell1 in range(-dl, dl+1):
             dell2 = dell1 - l2 + l1
-            l1p = l1 + dell1  # l2p = l1p
-            cij = 1.0  # 0.7 + 0.3*np.random.rand()
-            for dem in range(-dm, dm+1):
-                m1p = m1 + dem  # m2p = m1p
-                if (abs(m1p) <= l1p):
-                    omeganl1p, fwhmnl1p, amp1p = cdata.findfreq(data,
-                                                                l1p, n1, m1p)
-                    mix = (274.8*1e2*(l1p+0.5) /
-                           ((twopiemin6)**2*rsun))/omeganl1p**2
-                    leak1 = rleaks1[dem+dm_mat, dell1+dl_mat, m1+249] +\
-                        mix*horleaks1[dem+dm_mat, dell1+dl_mat, m1+249]
-                    leak2 = rleaks2[dem+dm_mat, dell2+dl_mat, m1+249] +\
-                        mix*horleaks2[dem+dm_mat, dell2+dl_mat, m1+249]
-                    phi1p = cdata.lorentzian(omeganl1p, fwhmnl1p, freq)
-                    phi1sum += leak1*leak2 * (phi1p*phi1p.conjugate()) * cij
+            l1p = l1 - dell1  # l2p = l1p
+            cij = 1.0  # 0.8 + 0.2*np.random.rand()
+            omeganl1p, fwhmnl1p, amp1p = cdata.findfreq_vecm(data,
+                                                             l1p, n1,
+                                                             m1p)
+            mix = (274.8*1e2*(l1p+0.5) /
+                   ((twopiemin6)**2*rsun))/omeganl1p**2
+            leak1 = rleaks1[:, dell1+dl_mat, m1+249] +\
+                mix*horleaks1[:, dell1+dl_mat, m1+249]
+            leak2 = rleaks2[:, dell2+dl_mat, m1+249] +\
+                mix*horleaks2[:, dell2+dl_mat, m1+249]
+            phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
+            amp1p = amp1p[:, np.newaxis]
+            phi1sum += (leak1*leak2 @ (amp1p*amp1p*phi1p*phi1p.conjugate()) * cij)
         csm[abs(m1), :] = phi1sum*norm
         phi1sum = 0.0*phi1sum
     t2 = time.time()
@@ -372,12 +382,22 @@ if __name__ == "__main__":
 #    plt.show()
 
     # derotating the cross spectra
-#    cs = derotate(cs, l1, n1, freq, 1)
-#    csm = derotate(csm, l1, n1, freq, -1)
+    cs = derotate(cs, l1, n1, freq, 1)
+    csm = derotate(csm, l1, n1, freq, -1)
 
     # plotting after derotation
 #    fig = plot_cs(cs, csm, freq, cenfreq, l1, 1)
 #    plt.show()
+
+    # restricting frequencies to within 25 \micro Hz of cenfreq
+    pmfreq = 25
+    indm = cdata.locatefreq(freq, cenfreq - pmfreq)
+    indp = cdata.locatefreq(freq, cenfreq + pmfreq)
+    print(f" indm, indp = ({indm}, {indp})")
+    freq = freq[indm:indp].copy()
+    cs = cs[:, indm:indp].copy()
+    csm = csm[:, indm:indp].copy()
+
 
     # writing cross spectra to files
     normname = "norm" if compute_norms else ""

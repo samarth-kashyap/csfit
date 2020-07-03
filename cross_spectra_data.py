@@ -129,6 +129,7 @@ if __name__ == "__main__":
     pmfreq = l1*0.6  # 20
     indm = cdata.locatefreq(freq, cenfreq - pmfreq)
     indp = cdata.locatefreq(freq, cenfreq + pmfreq)
+    print(f" indm, indp = ({indm}, {indp})")
     freq = freq[indm:indp].copy()
 
     for days in range(dayavgnum):
@@ -213,12 +214,13 @@ if __name__ == "__main__":
     csm = derotate(csm, l1, n1, freq, -1)
 
     # restricting frequencies to within 25 \micro Hz of cenfreq
-    pmfreq = 35
+    pmfreq = 25
     indm = cdata.locatefreq(freq, cenfreq - pmfreq)
     indp = cdata.locatefreq(freq, cenfreq + pmfreq)
+    print(f" indm, indp = ({indm}, {indp})")
     freq = freq[indm:indp].copy()
-    cs = cs[:, indm:indp].copy()
-    csm = csm[:, indm:indp].copy()
+    cs = cs[:, indm-1:indp-1].copy()
+    csm = csm[:, indm-1:indp-1].copy()
 
 #    fig = plot_cs_contour(freq, cs, cenfreq, l1, 1)
 #    plt.show()

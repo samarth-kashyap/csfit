@@ -1,15 +1,13 @@
-import numpy as np
+from heliosPy import datafuncs as cdata
+from globalvars import globalvars
 import matplotlib.pyplot as plt
 from math import pi
+import numpy as np
 import argparse
-import sys
 import os
 
 
-sys.path.append('/home/g.samarth/')
-from heliosPy import datafuncs as cdata
-
-
+# {{{ def fremove(fname):
 def fremove(fname):
     try:
         os.system("rm "+fname)
@@ -17,23 +15,63 @@ def fremove(fname):
     except OSError:
         print("Can't remove "+fname)
     return 0
+# }}} fremove(fname)
 
 
+# {{{ ArgumentParser
 parser = argparse.ArgumentParser()
 parser.add_argument("--force",
                     help="Force computes norms",
                     action="store_true")
-parser.add_argument("--l", help="spherical harmonic degree")
-parser.add_argument("--n", help="radial order")
+parser.add_argument("--l", help="spherical harmonic degree",
+                    type=int)
+parser.add_argument("--n", help="radial order",
+                    type=int)
 args = parser.parse_args()
+# }}} parser
 
+
+def plot_cs_sum(cs_data_sum, cs_synth_sum, dcshift, norm, freq_synth,
+                freq_data, cenfreq, csm_data_sum, csm_synth_sum, dcmshift):
+    fig = plt.figure(figsize=(9, 5))
+    plt.rc('text', usetex=True)
+    plt.rc('font', family='serif', size='14')
+    plt.subplot(122)
+    plt.xlim(-9, 23)
+    plt.ylim(0, 2*dcshift +
+             max(abs(cs_data_sum).max(), abs(cs_synth_sum).max()*norm))
+    plt.plot(freq_synth -
+             cenfreq, dcshift + cs_synth_sum*norm, 'r', label='synthetic')
+    plt.plot(freq_data - cenfreq, dcshift + cs_data_sum, 'b', label='data')
+    plt.title("$\sum_{m \ge 0} |\phi^{200, m}|^2$")
+    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
+    plt.ylabel("amplitude")
+    plt.legend()
+
+    plt.subplot(121)
+    plt.xlim(-9, 23)
+    plt.ylim(0, 2*dcshift +
+             max(abs(csm_data_sum).max(), abs(csm_synth_sum).max()*norm))
+    plt.plot(freq_synth -
+             cenfreq, dcmshift + csm_synth_sum*norm, 'r', label='synthetic')
+    plt.plot(freq_data - cenfreq, dcshift + csm_data_sum, 'b', label='data')
+    plt.title("$\sum_{m < 0} |\phi^{200, m}|^2$")
+    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
+    plt.ylabel("amplitude")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("/home/g.samarth/ps200.png")
+    return fig
+
+
+gvar = globalvars()
 l1 = int(args.l)
 n1 = int(args.n)
 
-writedir = '/scratch/g.samarth/csfit/'
+writedir = gvar.write_dir
 normname = f"norm_{l1:03d}_{n1:02d}"
 
-data = np.loadtxt('/home/g.samarth/leakage/hmi.6328.36')
+data = np.loadtxt(gvar.leak_dir + 'hmi.6328.36')
 
 if args.force:
     normsexist = False
@@ -44,16 +82,12 @@ else:
     except OSError:
         normsexist = False
 
-
+print(f" normsexist = {normsexist}")
 if not normsexist:
-    os.system("python " +
-              "/home/g.samarth/csfit/cross_spectra_data.py --l " +
-              str(l1) + " --n "+str(n1) + " --lp " + str(l1) +
-              " --np " + str(n1))
-    os.system("python " +
-              "/home/g.samarth/csfit/cross_spectra_synth.py --l " +
-              str(l1) + " --n " + str(n1) + " --lp " + str(l1) + " --np " +
-              str(n1) + " --norms")
+    os.system(f"python {gvar.prog_dir}cross_spectra_data.py --l " +
+              f"{l1} --n {n1} --lp {l1} --np {n1}")
+    os.system(f"python {gvar.prog_dir}cross_spectra_synth.py --l " +
+              f"{l1} --n {n1} --lp {l1} --np {n1} --norms")
 else:
     print("Norms exist, reading from " + writedir + normname)
 
@@ -89,7 +123,9 @@ if calc_dc_shift:
     indm_dc = cdata.locatefreq(freq_data, cenfreq - 40)
     indp_dc = cdata.locatefreq(freq_data, cenfreq - 20)
     dcshift = cs_data_sum[indm_dc:indp_dc].mean()
+    dcmshift = csm_data_sum[indm_dc:indp_dc].mean()
     cs_data_sum -= dcshift
+    csm_data_sum -= dcmshift
 else:
     dcshift = 0
 
@@ -130,6 +166,11 @@ norm = nr/dr
 print(dcshift)
 twopiemin6 = 2*pi*1e-6
 cnl = norm/amp**2/cenfreq**2/fwhm/twopiemin6**3
+
+fig = plot_cs_sum(cs_data_sum, cs_synth_sum, dcshift, norm, freq_synth,
+                  freq_data, cenfreq, csm_data_sum, csm_synth_sum, dcmshift)
+plt.show(fig)
+"""
 if not normsexist:
     ax = plt.subplot(111)
     plt.xlim(-25, 25)
@@ -152,7 +193,8 @@ else:
     ax.plot(freq_data - cenfreq, dcshift + cs_data_sum, 'b', label='data')
     ax.legend()
     plt.show()
-print(cnl)
+"""
+print(f" cnl = {cnl}")
 
 if not normsexist:
     fremove(fp_name_s)
