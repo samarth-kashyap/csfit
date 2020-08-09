@@ -244,6 +244,6 @@ if __name__ == "__main__":
     fp_name = writedir + f"csp_data_{n1:02d}_{l1:03d}_{l2:03d}.npy"
     fm_name = writedir + f"csm_data_{n1:02d}_{l1:03d}_{l2:03d}.npy"
     ff_name = writedir + f"freq_data_{n1:02d}_{l1:03d}_{l2:03d}.npy"
-    np.save(fp_name, cs)
-    np.save(fm_name, csm)
-    np.save(ff_name, freq)
+#    np.save(fp_name, cs)
+#    np.save(fm_name, csm)
+#    np.save(ff_name, freq)

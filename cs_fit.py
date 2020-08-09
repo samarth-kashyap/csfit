@@ -24,6 +24,7 @@ dl_mat = gvar.dl_mat
 
 
 class coupMat:
+    # {{{ docstring
     """ Class for handling objects related to C_{ij} (parameter matrix)
 
     Attributes:
@@ -54,6 +55,7 @@ class coupMat:
         generates synthetic C^i_j for testing
 
     """
+    # }}} docstring
 
     # {{{ def __init__(self, lmin, lmax, dl_coup):
     def __init__(self, lmin, lmax, dl_coup):
@@ -142,7 +144,7 @@ class coupMat:
     def cadd(self, corr):
         assert len(corr) == self.maxindex
         cij = self.coup_mat.copy()
-        print(f" Max correction to cij = {abs(corr).max()} ")
+#        print(f" Max correction to cij = {abs(corr).max()} ")
         cij[self.mask] += corr
         self.coup_mat = cij.copy()
         return None
@@ -150,9 +152,12 @@ class coupMat:
 
 
 class spectra():
+    # {{{ docstring
     """Class to handle synthetic spectral fitting
 
     """
+    # }}} docstring
+
     # {{{ def derotate(cs, l, n, freq, pm):
     def derotate(self, cs, l, n, freq, pm):
         """Derotate the given cross-spectra
@@ -217,19 +222,19 @@ class spectra():
         freq = freq[indm:indp]
 
         d_cs = np.zeros((self.l1+1, freq.shape[0]), dtype=complex)
-        csm = np.zeros((self.l1+1, freq.shape[0]), dtype=complex)
 
         # new norms
         cnl1 = np.loadtxt(writedir + f"norm_{self.l1:03d}_{self.n1:02d}")
         cnl2 = np.loadtxt(writedir + f"norm_{self.l2:03d}_{self.n2:02d}")
-        omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data, self.l1, self.n1, 0)
-        omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data, self.l2, self.n2, 0)
+        omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data,
+                                                 self.l1, self.n1, 0)
+        omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data,
+                                                 self.l2, self.n2, 0)
 
         norm1 = amp1**2 * omeganl1 * omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
         norm2 = amp2**2 * omeganl2 * omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
         norm = sqrt(norm1*norm2)
 
-        t1 = time.time()
         dell1 = self.l1 - l1p
         dell2 = self.l2 - l1p
         for m1 in range(self.l1+1):
@@ -237,18 +242,18 @@ class spectra():
             cij1 = self.cij.cij_val(l1p, l1p)
             cij2 = self.cij.cij_val(l1p, l1p).conjugate()
             omeganl1p, fwhmnl1p, amp1p = cdata.findfreq_vecm(mode_data,
-                                                            l1p, self.n1,
-                                                            m1p)
+                                                             l1p, self.n1,
+                                                             m1p)
             mix = (274.8*1e2*(l1p+0.5) /
-                ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
+                   ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
             leak1 = self.rleaks1[:, dell1+gvar.dl_mat, m1+249] +\
                 mix*self.horleaks1[:, dell1+gvar.dl_mat, m1+249]
             leak2 = self.rleaks2[:, dell2+gvar.dl_mat, m1+249] +\
                 mix*self.horleaks2[:, dell2+gvar.dl_mat, m1+249]
             phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
             amp1p = amp1p[:, np.newaxis]
-            d_cs[m1, :] = (leak1*leak2 @ (amp1p*amp1p*phi1p*phi1p.conjugate())*(cij1+cij2))
-        t2 = time.time()
+            d_cs[m1, :] = (leak1*leak2 @
+                           (amp1p*amp1p*phi1p*phi1p.conjugate())*(cij1+cij2))
 
         d_cs *= norm
 
@@ -289,20 +294,32 @@ class spectra():
         hi = np.linalg.pinv(self.H, rcond=1e-15)
         cij_corr = dpg * (hi @ g.transpose())
         self.cij.cadd(cij_corr)
-        return self.cij
+#        self.converge = False
+        if abs(cij_corr).max() < 1e-6:
+            self.converge = True
+        else:
+            self.converge = False
+        return self.cij, abs(cij_corr).max()
     # }}} gauss_newton(self, dpg)
 
     # {{{ def iter_GN(self, damping, Niter):
     def iter_GN(self, damping, Niter, reslimit=1e-10):
         self.count = 1
         res_list = np.zeros(Niter, dtype=np.float)
+        sdiff = 0
         for i in range(Niter):
-            print(f" Iteration number = {i}/{Niter-1} ")
-            self.cij = self.gauss_newton(damping)
+            self.cij, maxcorr = self.gauss_newton(damping)
             self.cs_synth = self.func_spectra(self.cij)
             self.count += 1
             S = self.obj_spectra()
             res_list[i] = S
+            if i > 0 and S >= res_list[i-1]:
+                sdiff = S - res_list[i-1]
+                damping *= -0.8
+            if self.converge:
+                self.S_list = res_list
+                return None
+            print(f" N/Nmax = {i}/{Niter-1}; d_S = {S:.5e}; max(d_cij) = {maxcorr:.5e} ")
         self.S_list = res_list
         return None
     # }}} iter_GN(self, damping, Niter)
@@ -316,14 +333,15 @@ class spectra():
         freq = freq[indm:indp]
 
         cs = np.zeros((self.l1+1, freq.shape[0]), dtype=complex)
-        csm = np.zeros((self.l1+1, freq.shape[0]), dtype=complex)
         phi1sum = np.zeros(freq.shape[0], dtype=complex)
 
         # new norms
         cnl1 = np.loadtxt(writedir + f"norm_{self.l1:03d}_{self.n1:02d}")
         cnl2 = np.loadtxt(writedir + f"norm_{self.l2:03d}_{self.n2:02d}")
-        omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data, self.l1, self.n1, 0)
-        omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data, self.l2, self.n2, 0)
+        omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data,
+                                                 self.l1, self.n1, 0)
+        omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data,
+                                                 self.l2, self.n2, 0)
 
         norm1 = amp1**2 * omeganl1 * omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
         norm2 = amp2**2 * omeganl2 * omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
@@ -341,76 +359,124 @@ class spectra():
                                                                  l1p, self.n1,
                                                                  m1p)
                 mix = (274.8*1e2*(l1p+0.5) /
-                    ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
+                       ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
                 leak1 = self.rleaks1[:, dell1+gvar.dl_mat, m1+249] +\
                     mix*self.horleaks1[:, dell1+gvar.dl_mat, m1+249]
                 leak2 = self.rleaks2[:, dell2+gvar.dl_mat, m1+249] +\
                     mix*self.horleaks2[:, dell2+gvar.dl_mat, m1+249]
                 phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
                 amp1p = amp1p[:, np.newaxis]
-                phi1sum += (leak1*leak2 @ (amp1p*amp1p*phi1p*phi1p.conjugate()) *
-                            cij1*cij2)
+                phi1sum += (leak1*leak2 @
+                            (amp1p*amp1p*phi1p*phi1p.conjugate())*cij1*cij2)
             cs[m1, :] = phi1sum*norm
             phi1sum = 0.0*phi1sum
         t2 = time.time()
         cs = self.derotate(cs, self.l1, self.n1, freq, 1)
-        print(f"Time taken for computation (positive m) = " +
-              f"{(t2 - t1):6.2f} seconds")
-#
-        """
-        for m1 in range(-self.l1, 0):
-            m1p = np.arange(m1+gvar.dm, m1-gvar.dm-1, -1)
-            for dell1 in range(-gvar.dl, gvar.dl+1):
-                dell2 = dell1 - self.l2 + self.l1
-                l1p = self.l1 - dell1
-                cij1 = coupmat.cij_val(l1p, l1p)
-                cij2 = coupmat.cij_val(l1p, l1p).conjugate()
-                omeganl1p, fwhmnl1p, amp1p = cdata.findfreq_vecm(mode_data,
-                                                                 l1p, self.n1,
-                                                                 m1p)
-                mix = (274.8*1e2*(l1p+0.5) /
-                    ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
-                leak1 = self.rleaks1[:, dell1+gvar.dl_mat, m1+249] +\
-                    mix*self.horleaks1[:, dell1+gvar.dl_mat, m1+249]
-                leak2 = self.rleaks2[:, dell2+gvar.dl_mat, m1+249] +\
-                    mix*self.horleaks2[:, dell2+gvar.dl_mat, m1+249]
-                phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
-                amp1p = amp1p[:, np.newaxis]
-                phi1sum += (leak1*leak2 @ (amp1p*amp1p*phi1p*phi1p.conjugate()) *
-                            cij1*cij2)
-            csm[abs(m1), :] = phi1sum*norm
-            phi1sum = 0.0*phi1sum
-        t2 = time.time()
-        csm = self.derotate(csm, self.l1, self.n1, freq, -1)
-        print(f"Time taken for computation (negative m) = " +
-              f"{(t2 - t1):6.2f} seconds")
-        """
-#
+#        print(f"Time taken for computation (positive m) = " +
+#              f"{(t2 - t1):6.2f} seconds")
+
         # restricting frequencies to within 25 \micro Hz of cenfreq
         pmfreq = 25
         indm = cdata.locatefreq(freq, self.cenfreq - pmfreq)
         indp = cdata.locatefreq(freq, self.cenfreq + pmfreq)
         freq = freq[indm:indp].copy()
         self.cs_synth = cs[:, indm:indp].sum(axis=0)
-#        self.csm_synth = csm[:, indm:indp].sum(axis=0)
-        return self.cs_synth  #, self.csm_synth
+        return self.cs_synth
     # }}} func_spectra(self, coupmat)
+
+    # {{{ def linfit_S(self):
+    def linfit_S(self):
+        t = np.linspace(0, 72*24*3600, gvar.tsLen)
+        freq = np.fft.fftfreq(t.shape[0], t[1] - t[0])*1e6
+        indm = cdata.locatefreq(freq, self.cenfreq - self.l1*0.6)
+        indp = cdata.locatefreq(freq, self.cenfreq + self.l1*0.6)
+        freq = freq[indm:indp]
+
+        cs = np.zeros((self.l1+1, freq.shape[0]), dtype=complex)
+        phi1sum = np.zeros(freq.shape[0], dtype=complex)
+
+        # new norms
+        cnl1 = np.loadtxt(writedir + f"norm_{self.l1:03d}_{self.n1:02d}")
+        cnl2 = np.loadtxt(writedir + f"norm_{self.l2:03d}_{self.n2:02d}")
+        omeganl1, fwhmnl1, amp1 = cdata.findfreq(mode_data,
+                                                 self.l1, self.n1, 0)
+        omeganl2, fwhmnl2, amp2 = cdata.findfreq(mode_data,
+                                                 self.l2, self.n2, 0)
+
+        norm1 = amp1**2 * omeganl1 * omeganl1 * cnl1 * fwhmnl1 * twopiemin6**3
+        norm2 = amp2**2 * omeganl2 * omeganl2 * cnl2 * fwhmnl2 * twopiemin6**3
+        norm = sqrt(norm1*norm2)
+        cs_S = np.zeros((2*gvar.dl_mat+1, freq.shape[0]), dtype=np.complex)
+
+        t1 = time.time()
+        for dell1 in range(-gvar.dl, gvar.dl+1):
+            dell2 = dell1 - self.l2 + self.l1
+            l1p = self.l1 - dell1
+            for m1 in range(self.l1+1):
+                m1p = np.arange(m1+gvar.dm, m1-gvar.dm-1, -1)
+                cij1 = 1
+                cij2 = 1
+                omeganl1p, fwhmnl1p, amp1p = cdata.findfreq_vecm(mode_data,
+                                                                 l1p, self.n1,
+                                                                 m1p)
+                mix = (274.8*1e2*(l1p+0.5) /
+                       ((gvar.twopiemin6)**2*gvar.rsun))/omeganl1p**2
+                leak1 = self.rleaks1[:, dell1+gvar.dl_mat, m1+249] +\
+                    mix*self.horleaks1[:, dell1+gvar.dl_mat, m1+249]
+                leak2 = self.rleaks2[:, dell2+gvar.dl_mat, m1+249] +\
+                    mix*self.horleaks2[:, dell2+gvar.dl_mat, m1+249]
+                phi1p = cdata.lorentzian_vec(omeganl1p, fwhmnl1p, freq)
+                amp1p = amp1p[:, np.newaxis]
+                phi1sum = (leak1*leak2 @
+                            (amp1p*amp1p*phi1p*phi1p.conjugate())*cij1*cij2)
+                cs[m1, :] = phi1sum*norm
+            phi1sum = 0.0*phi1sum
+            cs = self.derotate(cs, self.l1, self.n1, freq, 1)
+#            plt.figure(); plt.imshow(cs.real); plt.savefig(f"/scratch/g.samarth/templots/cs{dell1}"); plt.close()
+            cs_S[dell1+gvar.dl_mat, :] = cs.sum(axis=0).copy()
+        t2 = time.time()
+        print(f"Time taken for computation (positive m) = " +
+              f"{(t2 - t1):6.2f} seconds")
+
+        # restricting frequencies to within 25 \micro Hz of cenfreq
+        pmfreq = 25
+        indm = cdata.locatefreq(freq, self.cenfreq - pmfreq)
+        indp = cdata.locatefreq(freq, self.cenfreq + pmfreq)
+        freq = freq[indm:indp].copy()
+        self.cs_S = cs_S[:, indm:indp]
+        return self.cs_S
+    # }}} linfit_S(self)
+
+    # {{{ def linfit(self):
+    def linfit(self):
+        cs_S = self.linfit_S()
+        csd = self.cs_data
+        A = (cs_S @ cs_S.transpose()).real
+        b = (cs_S @ csd).real
+        ata_inv = np.linalg.pinv(A.transpose() @ A, rcond=1e-15)
+        x = ata_inv @ (A.transpose() @ b)
+        return x[::-1]
+    # }}} def linfit(self):
 
     # {{{ def __init__(self, l1, n1, l2, n2, coupmat):
     def __init__(self, ln_data, coupmat):
         self.cij = coupmat
         self.l1, self.n1, self.l2, self.n2 = ln_data
         self.cenfreq, self.cenfwhm, cenamp = cdata.findfreq(mode_data,
-                                                            self.l1, self.n1, 0)
+                                                            self.l1,
+                                                            self.n1, 0)
 
-        csd = np.load(f"{gvar.write_dir}csp_data_{self.n1:02d}"+
+        csd = np.load(f"{gvar.write_dir}csp_data_{self.n1:02d}" +
                       f"_{self.l1:03d}_{self.l2:03d}.npy")
-        csm = np.load(f"{gvar.write_dir}csm_data_{self.n1:02d}"+
+        csm = np.load(f"{gvar.write_dir}csm_data_{self.n1:02d}" +
                       f"_{self.l1:03d}_{self.l2:03d}.npy")
+        freqd = np.load(f"{gvar.write_dir}freq_data_{self.n1:02d}" +
+                        f"_{self.l1:03d}_{self.l2:03d}.npy")
         self.cs_data, self.csm_data = csd.sum(axis=0).copy(), csm.sum(axis=0)
         bg, bgm = self.cs_data[:50].mean(), self.csm_data[:50].mean()
         self.cs_data -= bg
         self.csm_data -= bgm
+        self.freq_data = freqd
         del csd, csm, bg, bgm
 
         rleaks = fits.open(f"{gvar.leak_dir}rleaks1.fits")[0].data
@@ -420,9 +486,6 @@ class spectra():
         self.horleaks1 = horleaks[:, :, self.l1, :].copy()
         self.horleaks2 = horleaks[:, :, self.l2, :].copy()
         del rleaks, horleaks
-        print(f"-----------------------------------------------\n" +
-              f"       Initializing synthetic spectra          \n" +
-              f"-----------------------------------------------\n")
         self.cs_synth = self.func_spectra(coupmat)
         self.res = self.resid_spectra()
         self.grad_S()
@@ -537,32 +600,50 @@ def create_synth(l1, n1, l2, n2, coupmat):
 
 
 if __name__ == "__main__":
+    t1 = time.time()
     # directories
     writedir = '/scratch/g.samarth/csfit/'
 
-    coupmat = coupMat(194, 206, 0)
-#    coupmat.generate_synth()
+    coupmat = coupMat(194, 207, 0)
     ln_data = 200, 0, 200, 0
     CS = spectra(ln_data, coupmat)
-    css_old = CS.cs_synth
-    t1 = time.time()
-    #CS.iter_GN(8e14, 3500)
-    CS.iter_GN(0.1, 20)
-    t2 = time.time()
-    print(f"=================================================" +
-          f"Total time taken = {(t2-t1)/60:5.2f} min")
 
-    css = CS.cs_synth
+    # storing the cross-spectrum before + after fitting
+    css_bf = CS.cs_synth
+    # CS.iter_GN(0.5, 400)
+    # css_af = CS.cs_synth
+
+    norms = CS.linfit()
+    coupmat2 = coupMat(194, 207, 0)
+    coupmat2.coup_mat = np.diag(np.sqrt(abs(norms)))
+    CS2 = spectra(ln_data, coupmat2)
+    css_lf = CS2.cs_synth
+    print(norms)
+    t2 = time.time()
+
     csd = CS.cs_data
 
     maxind = np.where(csd == np.amax(csd))[0][0]
-    norm_old = csd.real[maxind]/css_old.real[maxind]
-    norm = csd.real[maxind]/css.real[maxind]
+    norm_bf = csd.real[maxind]/css_bf.real[maxind]
+#    norm_af = csd.real[maxind]/css_af.real[maxind]
+    norm_lf = csd.real[maxind]/css_lf.real[maxind]
 
-    plt.figure(figsize=(15, 15))
-    plt.plot(css.real * norm, 'r', label='synthetic - after fit')
-    plt.plot(css_old.real * norm_old, '--', color='black', label='synthetic - before fit')
-    plt.plot(csd.real, 'b', label='data')
+    print(f"=================================================\n" +
+          f"Total time taken = {(t2-t1)/60:5.2f} min")
+    plt.figure(figsize=(12, 5))
+    plt.rc("text", usetex="True")
+    plt.rc("font", family="serif", size="12")
+    plt.plot(CS.freq_data, css_bf.real * norm_bf, '--', color='blue', alpha=0.9,
+             label='synthetic - before fit')
+    # plt.plot(CS.freqd, css_af.real * norm_af, '--', color='red', alpha=0.8,
+    #         label='synthetic - after fit (non-linear)')
+    plt.plot(CS.freq_data, css_lf.real * norm_lf, '--', color='red', alpha=0.9,
+             label='synthetic - after fitting N_j')
+    plt.plot(CS.freq_data, csd.real, color='black', label='data')
+    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
     plt.legend()
-    plt.savefig("/home/g.samarth/ps200fit.png")
+#    plt.savefig("/home/g.samarth/ps200fit_v5.png")
     plt.show()
+
+    Ni = np.sqrt(np.diag(abs(CS.cij.coup_mat))**2)
+#    np.save("/home/g.samarth/csfit/Ni_v5.npy", Ni)

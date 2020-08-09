@@ -84,8 +84,11 @@ else:
 
 print(f" normsexist = {normsexist}")
 if not normsexist:
+    print(f" normsexist = {normsexist}")
+    print(f"Computing data")
     os.system(f"python {gvar.prog_dir}cross_spectra_data.py --l " +
               f"{l1} --n {n1} --lp {l1} --np {n1}")
+    print("Computing synth")
     os.system(f"python {gvar.prog_dir}cross_spectra_synth.py --l " +
               f"{l1} --n {n1} --lp {l1} --np {n1} --norms")
 else:
@@ -162,7 +165,7 @@ nr = (cs_synth_sum4 * cs_data_sum4).sum()
 dr = (cs_synth_sum4**2).sum()
 '''
 norm = nr/dr
-
+norm *= 1.1
 print(dcshift)
 twopiemin6 = 2*pi*1e-6
 cnl = norm/amp**2/cenfreq**2/fwhm/twopiemin6**3

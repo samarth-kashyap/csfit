@@ -1,12 +1,21 @@
+# {{{ Library imports
 from math import pi
 import os
+# }}} imports
 
 
 class globalvars():
+    # {{{ docstring
     """Class to store all the global variables
 
     """
+    # }}} docstring
+
+    # {{{ def __init__(self):
     def __init__(self):
+        """Initializes the class object
+
+        """
         # path of the leakage matrices and freq splitting data
         self.leak_dir = "/scratch/g.samarth/HMIDATA/leakmat/"
 
@@ -25,3 +34,5 @@ class globalvars():
 
         self.daynum = 1      # length of time series
         self.tsLen = 138240  # array length of the time series
+        return None
+    # }}} __init__(self)

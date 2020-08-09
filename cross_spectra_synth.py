@@ -210,7 +210,7 @@ def plot_cs(cs, csm, freq, cenfreq, l1, real_or_imag):
                extent=[freq[0]-cenfreq, freq[-1]-cenfreq, -l1, 0],
                cmap='gray')
 #    plt.colorbar(im)
-    plt.xlabel("$\omega - \omega_{nl}$ in $\mu$Hz")
+    plt.xlabel(r"$\omega - \omega_{nl}$ in $\mu$Hz")
     plt.ylabel("azimuthal order $m$")
     plt.tight_layout()
     return fig
@@ -286,8 +286,9 @@ if __name__ == "__main__":
     print("Reading leakage matrix ", end=' '),
     sys.stdout.flush()
     t1 = time.time()
-    rleaks = fits.open(gvar.leak_dir + 'rleaks1.fits')[0].data
-    horleaks = fits.open(gvar.leak_dir + 'horleaks1.fits')[0].data
+    rleaks = fits.open(gvar.leak_dir + 'rleaks1fd.fits')[0].data
+    horleaks = fits.open(gvar.leak_dir + 'horleaks1fd.fits')[0].data
+
     t2 = time.time()
     print(f" -- DONE. Time taken = {t2-t1:6.2f} seconds")
 
